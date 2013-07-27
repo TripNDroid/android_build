@@ -165,7 +165,6 @@ PRODUCT_PACKAGES += \
     InputDevices \
     LatinIME \
     Phone \
-    Provision \
     hostapd \
     wpa_supplicant.conf
 

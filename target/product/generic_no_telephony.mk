@@ -35,7 +35,6 @@ PRODUCT_PACKAGES := \
     Launcher2 \
     Music \
     OneTimeInitializer \
-    Provision \
     Phone \
     QuickSearchBox \
     Settings \
