@@ -100,8 +100,6 @@ endif
 # To use ART but also include Dalvik, use "runtime_libart_default runtime_libdvm"
 ifndef OVERRIDE_RUNTIMES
 #OVERRIDE_RUNTIMES:=runtime_libart_default
-#OVERRIDE_RUNTIMES:=runtime_libdvm_default runtime_libart
-#OVERRIDE_RUNTIMES:=runtime_libart_default runtime_libdvm
 endif
 
 # when the build system changes such that this file must be updated, this
