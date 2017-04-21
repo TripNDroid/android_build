@@ -237,6 +237,11 @@ LOCAL_DEX_PREOPT := false
 endif
 endif
 
+# Disable dex-preopt of specific prebuilts to save space, if requested.
+ifneq ($(filter $(DEXPREOPT_BLACKLIST),$(LOCAL_MODULE)),)
+LOCAL_DEX_PREOPT := false
+endif
+
 #######################################
 # defines built_odex along with rule to install odex
 include $(BUILD_SYSTEM)/dex_preopt_odex_install.mk
@@ -263,13 +268,9 @@ $(built_module): PRIVATE_EMBEDDED_JNI_LIBS := $(embedded_prebuilt_jni_libs)
 
 $(built_module) : $(my_prebuilt_src_file) | $(ACP) $(ZIPALIGN) $(SIGNAPK_JAR) $(AAPT)
 	$(transform-prebuilt-to-target)
+ifneq ($(LOCAL_MODULE_PATH),$(TARGET_OUT_VENDOR)/bundled-app)
 	$(uncompress-shared-libs)
-ifdef LOCAL_DEX_PREOPT
-ifneq ($(BUILD_PLATFORM_ZIP),)
-	@# Keep a copy of apk with classes.dex unstripped
-	$(hide) cp -f $@ $(dir $@)package.dex.apk
-endif  # BUILD_PLATFORM_ZIP
-endif  # LOCAL_DEX_PREOPT
+endif
 ifneq ($(LOCAL_CERTIFICATE),PRESIGNED)
 	@# Only strip out files if we can re-sign the package.
 ifdef LOCAL_DEX_PREOPT
@@ -313,7 +314,7 @@ $(built_apk_splits) : $(built_module_path)/%.apk : $(my_src_dir)/%.apk | $(ACP) 
 
 # Rules to install the split apks.
 $(installed_apk_splits) : $(my_module_path)/%.apk : $(built_module_path)/%.apk | $(ACP)
-	@echo "Install: $@"
+	@echo -e ${CL_CYN}"Install:"${CL_RST}" $@"
 	$(copy-file-to-new-target)
 
 # Register the additional built and installed files.
@@ -345,7 +346,7 @@ else # ! boot jar
 $(built_odex): PRIVATE_MODULE := $(LOCAL_MODULE)
 # Use pattern rule - we may have multiple built odex files.
 $(built_odex) : $(dir $(LOCAL_BUILT_MODULE))% : $(my_prebuilt_src_file)
-	@echo "Dexpreopt Jar: $(PRIVATE_MODULE) ($@)"
+	@echo -e ${CL_GRN}"Dexpreopt Jar:"${CL_RST}" $(PRIVATE_MODULE) ($@)"
 	$(call dexpreopt-one-file,$<,$@)
 
 $(built_module) : $(my_prebuilt_src_file) | $(ACP)

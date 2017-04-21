@@ -30,6 +30,15 @@ else
   endif
 endif
 
+# Many qcom modules don't correctly set a dependency on the kernel headers. Fix it for them,
+# but warn the user.
+ifneq (,$(findstring $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include,$(LOCAL_C_INCLUDES)))
+  ifeq (,$(findstring $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr,$(LOCAL_ADDITIONAL_DEPENDENCIES)))
+    $(warning $(LOCAL_MODULE) uses kernel headers, but does not depend on them!)
+    LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+  endif
+endif
+
 # The following LOCAL_ variables will be modified in this file.
 # Because the same LOCAL_ variables may be used to define modules for both 1st arch and 2nd arch,
 # we can't modify them in place.
@@ -277,27 +286,6 @@ include $(BUILD_SYSTEM)/config_sanitizers.mk
 # Add in libcompiler_rt for all regular device builds
 ifeq (,$(LOCAL_SDK_VERSION)$(WITHOUT_LIBCOMPILER_RT))
   my_static_libraries += $(COMPILER_RT_CONFIG_EXTRA_STATIC_LIBRARIES)
-endif
-
-####################################################
-## Add FDO flags if FDO is turned on and supported
-## Please note that we will do option filtering during FDO build.
-## i.e. Os->O2, remove -fno-early-inline and -finline-limit.
-##################################################################
-my_fdo_build :=
-ifneq ($(filter true always, $(LOCAL_FDO_SUPPORT)),)
-  ifeq ($(BUILD_FDO_INSTRUMENT),true)
-    my_cflags += $($(LOCAL_2ND_ARCH_VAR_PREFIX)TARGET_FDO_INSTRUMENT_CFLAGS)
-    my_ldflags += $($(LOCAL_2ND_ARCH_VAR_PREFIX)TARGET_FDO_INSTRUMENT_LDFLAGS)
-    my_fdo_build := true
-  else ifneq ($(filter true,$(BUILD_FDO_OPTIMIZE))$(filter always,$(LOCAL_FDO_SUPPORT)),)
-    my_cflags += $($(LOCAL_2ND_ARCH_VAR_PREFIX)TARGET_FDO_OPTIMIZE_CFLAGS)
-    my_fdo_build := true
-  endif
-  # Disable ccache (or other compiler wrapper) except gomacc, which
-  # can handle -fprofile-use properly.
-  my_cc_wrapper := $(filter $(GOMA_CC),$(my_cc_wrapper))
-  my_cxx_wrapper := $(filter $(GOMA_CC),$(my_cxx_wrapper))
 endif
 
 ###########################################################
@@ -1173,7 +1161,7 @@ import_includes_deps := $(strip \
       $(call intermediates-dir-for,STATIC_LIBRARIES,$(l),$(LOCAL_IS_HOST_MODULE),,$(LOCAL_2ND_ARCH_VAR_PREFIX),$(my_host_cross))/export_includes))
 $(import_includes): PRIVATE_IMPORT_EXPORT_INCLUDES := $(import_includes_deps)
 $(import_includes) : $(LOCAL_MODULE_MAKEFILE_DEP) $(import_includes_deps)
-	@echo Import includes file: $@
+	@echo -e ${CL_CYN}Import includes file:${CL_RST} $@
 	$(hide) mkdir -p $(dir $@) && rm -f $@
 ifdef import_includes_deps
 	$(hide) for f in $(PRIVATE_IMPORT_EXPORT_INCLUDES); do \
@@ -1226,6 +1214,11 @@ $(foreach f,$(my_tracked_gen_files),$(eval my_src_file_gen_$(s):=))
 my_tracked_gen_files :=
 $(foreach f,$(my_tracked_src_files),$(eval my_src_file_obj_$(s):=))
 my_tracked_src_files :=
+
+## Allow a device's own headers to take precedence over global ones
+ifneq ($(TARGET_SPECIFIC_HEADER_PATH),)
+my_c_includes := $(TOPDIR)$(TARGET_SPECIFIC_HEADER_PATH) $(my_c_includes)
+endif
 
 my_c_includes += $(TOPDIR)$(LOCAL_PATH) $(intermediates) $(generated_sources_dir)
 

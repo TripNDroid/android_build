@@ -211,6 +211,9 @@ def ProcessTargetFiles(input_tf_zip, output_tf_zip, misc_info,
     if info.filename.startswith("IMAGES/"):
       continue
 
+    if info.filename.startswith("BOOTABLE_IMAGES/"):
+      continue
+
     data = input_tf_zip.read(info.filename)
     out_info = copy.copy(info)
 
@@ -415,7 +418,7 @@ def RewriteProps(data, misc_info):
         value = "/".join(pieces)
       elif key == "ro.build.description":
         pieces = value.split(" ")
-        assert len(pieces) == 5
+        #assert len(pieces) == 5
         pieces[-1] = EditTags(pieces[-1])
         value = " ".join(pieces)
       elif key == "ro.build.tags":

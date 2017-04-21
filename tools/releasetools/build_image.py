@@ -52,9 +52,9 @@ def RunCommand(cmd):
 
 def GetVerityFECSize(partition_size):
   cmd = "fec -s %d" % partition_size
-  status, output = commands.getstatusoutput(cmd)
+  status, output = getstatusoutput(cmd)
   if status:
-    print output
+    print(output)
     return False, 0
   return True, int(output)
 
@@ -149,8 +149,9 @@ def BuildVerityFEC(sparse_image_path, verity_path, verity_fec_path,
                                    verity_path, verity_fec_path)
   print cmd
   status, output = commands.getstatusoutput(cmd)
+
   if status:
-    print "Could not build FEC data! Error: %s" % output
+    print("Could not build FEC data! Error: %s" % output)
     return False
   return True
 
@@ -203,10 +204,10 @@ def Append2Simg(sparse_image_path, unsparse_image_path, error_message):
 
 def Append(target, file_to_append, error_message):
   cmd = 'cat %s >> %s' % (file_to_append, target)
-  print cmd
-  status, output = commands.getstatusoutput(cmd)
+  print(cmd)
+  status, output = getstatusoutput(cmd)
   if status:
-    print "%s: %s" % (error_message, output)
+    print("%s: %s" % (error_message, output))
     return False
   return True
 
@@ -382,9 +383,13 @@ def BuildImage(in_dir, prop_dict, out_file, target_out=None):
     build_command = ["mkuserimg.sh"]
     if "extfs_sparse_flag" in prop_dict:
       build_command.append(prop_dict["extfs_sparse_flag"])
-      run_fsck = True
-    build_command.extend([in_dir, out_file, fs_type,
-                          prop_dict["mount_point"]])
+      #run_fsck = True
+    if "is_userdataextra" in prop_dict:
+      build_command.extend([in_dir, out_file, fs_type,
+                           "data"])
+    else:
+      build_command.extend([in_dir, out_file, fs_type,
+                            prop_dict["mount_point"]])
     build_command.append(prop_dict["partition_size"])
     if "journal_size" in prop_dict:
       build_command.extend(["-j", prop_dict["journal_size"]])
@@ -594,6 +599,11 @@ def ImagePropFromGlobalDict(glob_dict, mount_point):
     copy_prop("fs_type", "fs_type")
     copy_prop("userdata_fs_type", "fs_type")
     copy_prop("userdata_size", "partition_size")
+  elif mount_point == "data_extra":
+    copy_prop("fs_type", "fs_type")
+    copy_prop("userdataextra_size", "partition_size")
+    copy_prop("userdataextra_name", "partition_name")
+    d["is_userdataextra"] = True
   elif mount_point == "cache":
     copy_prop("cache_fs_type", "fs_type")
     copy_prop("cache_size", "partition_size")

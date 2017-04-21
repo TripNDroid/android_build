@@ -216,8 +216,8 @@ def LoadInfoDict(input_file, input_dir=None):
       if os.path.exists(system_base_fs_file):
         d["system_base_fs_file"] = system_base_fs_file
       else:
-        print "Warning: failed to find system base fs file: %s" % (
-            system_base_fs_file,)
+        print("Warning: failed to find system base fs file: %s" % (
+            system_base_fs_file,))
         del d["system_base_fs_file"]
 
     if "vendor_base_fs_file" in d:
@@ -226,8 +226,8 @@ def LoadInfoDict(input_file, input_dir=None):
       if os.path.exists(vendor_base_fs_file):
         d["vendor_base_fs_file"] = vendor_base_fs_file
       else:
-        print "Warning: failed to find vendor base fs file: %s" % (
-            vendor_base_fs_file,)
+        print("Warning: failed to find vendor base fs file: %s" % (
+            vendor_base_fs_file,))
         del d["vendor_base_fs_file"]
 
   try:
@@ -341,9 +341,10 @@ def LoadRecoveryFSTab(read_helper, fstab_version, recovery_fstab_path,
           else:
             print "%s: unknown option \"%s\"" % (mount_point, i)
 
-      d[mount_point] = Partition(mount_point=mount_point, fs_type=pieces[1],
-                                 device=pieces[2], length=length,
-                                 device2=device2)
+      if not d.get(mount_point):
+          d[mount_point] = Partition(mount_point=mount_point, fs_type=pieces[1],
+                                     device=pieces[2], length=length,
+                                     device2=device2)
 
   elif fstab_version == 2:
     d = {}
@@ -379,9 +380,10 @@ def LoadRecoveryFSTab(read_helper, fstab_version, recovery_fstab_path,
           context = i
 
       mount_point = pieces[1]
-      d[mount_point] = Partition(mount_point=mount_point, fs_type=pieces[2],
-                                 device=pieces[0], length=length,
-                                 device2=None, context=context)
+      if not d.get(mount_point):
+          d[mount_point] = Partition(mount_point=mount_point, fs_type=pieces[2],
+                                     device=pieces[0], length=length,
+                                     device2=None, context=context)
 
   else:
     raise ValueError("Unknown fstab_version: \"%d\"" % (fstab_version,))
@@ -441,57 +443,120 @@ def _BuildBootableImage(sourcedir, fs_config_file, info_dict=None,
     info_dict = OPTIONS.info_dict
 
   img = tempfile.NamedTemporaryFile()
+  bootimg_key = os.getenv("PRODUCT_PRIVATE_KEY", None)
 
   if has_ramdisk:
     ramdisk_img = make_ramdisk()
 
-  # use MKBOOTIMG from environ, or "mkbootimg" if empty or not set
-  mkbootimg = os.getenv('MKBOOTIMG') or "mkbootimg"
-
-  cmd = [mkbootimg, "--kernel", os.path.join(sourcedir, "kernel")]
-
-  fn = os.path.join(sourcedir, "second")
+  """check if uboot is requested"""
+  fn = os.path.join(sourcedir, "ubootargs")
   if os.access(fn, os.F_OK):
-    cmd.append("--second")
-    cmd.append(fn)
-
-  fn = os.path.join(sourcedir, "cmdline")
-  if os.access(fn, os.F_OK):
-    cmd.append("--cmdline")
-    cmd.append(open(fn).read().rstrip("\n"))
-
-  fn = os.path.join(sourcedir, "base")
-  if os.access(fn, os.F_OK):
-    cmd.append("--base")
-    cmd.append(open(fn).read().rstrip("\n"))
-
-  fn = os.path.join(sourcedir, "pagesize")
-  if os.access(fn, os.F_OK):
-    cmd.append("--pagesize")
-    cmd.append(open(fn).read().rstrip("\n"))
-
-  args = info_dict.get("mkbootimg_args", None)
-  if args and args.strip():
-    cmd.extend(shlex.split(args))
-
-  args = info_dict.get("mkbootimg_version_args", None)
-  if args and args.strip():
-    cmd.extend(shlex.split(args))
-
-  if has_ramdisk:
-    cmd.extend(["--ramdisk", ramdisk_img.name])
-
-  img_unsigned = None
-  if info_dict.get("vboot", None):
-    img_unsigned = tempfile.NamedTemporaryFile()
-    cmd.extend(["--output", img_unsigned.name])
+    cmd = ["mkimage"]
+    for argument in open(fn).read().rstrip("\n").split(" "):
+      cmd.append(argument)
+    cmd.append("-d")
+    cmd.append(os.path.join(sourcedir, "kernel") + ":" + ramdisk_img.name)
+    cmd.append(img.name)
   else:
-    cmd.extend(["--output", img.name])
+    # use MKBOOTIMG from environ, or "mkbootimg" if empty or not set
+    mkbootimg = os.getenv('MKBOOTIMG') or "mkbootimg"
+
+    cmd = [mkbootimg, "--kernel", os.path.join(sourcedir, "kernel")]
+
+    fn = os.path.join(sourcedir, "second")
+    if os.access(fn, os.F_OK):
+      cmd.append("--second")
+      cmd.append(fn)
+
+    fn = os.path.join(sourcedir, "cmdline")
+    if os.access(fn, os.F_OK):
+      cmd.append("--cmdline")
+      cmd.append(open(fn).read().rstrip("\n"))
+
+    fn = os.path.join(sourcedir, "base")
+    if os.access(fn, os.F_OK):
+      cmd.append("--base")
+      cmd.append(open(fn).read().rstrip("\n"))
+
+    fn = os.path.join(sourcedir, "tagsaddr")
+    if os.access(fn, os.F_OK):
+      cmd.append("--tags-addr")
+      cmd.append(open(fn).read().rstrip("\n"))
+
+    fn = os.path.join(sourcedir, "ramdisk_offset")
+    if os.access(fn, os.F_OK):
+      cmd.append("--ramdisk_offset")
+      cmd.append(open(fn).read().rstrip("\n"))
+
+    fn = os.path.join(sourcedir, "dt")
+    if os.access(fn, os.F_OK):
+      cmd.append("--dt")
+      cmd.append(fn)
+
+    fn = os.path.join(sourcedir, "pagesize")
+    if os.access(fn, os.F_OK):
+      kernel_pagesize = open(fn).read().rstrip("\n")
+      cmd.append("--pagesize")
+      cmd.append(kernel_pagesize)
+
+    args = info_dict.get("mkbootimg_args", None)
+    if args and args.strip():
+      cmd.extend(shlex.split(args))
+
+    args = info_dict.get("mkbootimg_version_args", None)
+    if args and args.strip():
+      cmd.extend(shlex.split(args))
+
+    if has_ramdisk:
+      cmd.extend(["--ramdisk", ramdisk_img.name])
+
+    img_unsigned = None
+    if info_dict.get("vboot", None):
+      img_unsigned = tempfile.NamedTemporaryFile()
+      cmd.extend(["--output", img_unsigned.name])
+    else:
+      cmd.extend(["--output", img.name])
 
   p = Run(cmd, stdout=subprocess.PIPE)
   p.communicate()
   assert p.returncode == 0, "mkbootimg of %s image failed" % (
       os.path.basename(sourcedir),)
+
+  if bootimg_key and os.path.exists(bootimg_key) and kernel_pagesize > 0:
+    print "Signing bootable image..."
+    bootimg_key_passwords = {}
+    bootimg_key_passwords.update(PasswordManager().GetPasswords(bootimg_key.split()))
+    bootimg_key_password = bootimg_key_passwords[bootimg_key]
+    if bootimg_key_password is not None:
+        bootimg_key_password += "\n"
+    img_sha256 = tempfile.NamedTemporaryFile()
+    img_sig = tempfile.NamedTemporaryFile()
+    img_sig_padded = tempfile.NamedTemporaryFile()
+    img_secure = tempfile.NamedTemporaryFile()
+    p = Run(["openssl", "dgst", "-sha256", "-binary", "-out", img_sha256.name, img.name],
+        stdout=subprocess.PIPE)
+    p.communicate()
+    assert p.returncode == 0, "signing of bootable image failed"
+    p = Run(["openssl", "rsautl", "-sign", "-in", img_sha256.name, "-inkey", bootimg_key, "-out",
+        img_sig.name, "-passin", "stdin"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    p.communicate(bootimg_key_password)
+    assert p.returncode == 0, "signing of bootable image failed"
+    p = Run(["dd", "if=/dev/zero", "of=%s" % img_sig_padded.name, "bs=%s" % kernel_pagesize,
+        "count=1"], stdout=subprocess.PIPE)
+    p.communicate()
+    assert p.returncode == 0, "signing of bootable image failed"
+    p = Run(["dd", "if=%s" % img_sig.name, "of=%s" % img_sig_padded.name, "conv=notrunc"],
+        stdout=subprocess.PIPE)
+    p.communicate()
+    assert p.returncode == 0, "signing of bootable image failed"
+    p = Run(["cat", img.name, img_sig_padded.name], stdout=img_secure.file.fileno())
+    p.communicate()
+    assert p.returncode == 0, "signing of bootable image failed"
+    shutil.copyfile(img_secure.name, img.name)
+    img_sha256.close()
+    img_sig.close()
+    img_sig_padded.close()
+    img_secure.close()
 
   if (info_dict.get("boot_signer", None) == "true" and
       info_dict.get("verity_key", None)):
@@ -591,6 +656,7 @@ def UnzipTemp(filename, pattern=None):
   OPTIONS.tempfiles.append(tmp)
 
   def unzip_to_dir(filename, dirname):
+    subprocess.call(["rm", "-rf", dirname + filename, "targetfiles-*"])
     cmd = ["unzip", "-o", "-q", filename, "-d", dirname]
     if pattern is not None:
       cmd.append(pattern)
@@ -758,6 +824,8 @@ def CheckSize(data, target, info_dict):
   fs_type = None
   limit = None
   if info_dict["fstab"]:
+    if mount_point == "/userdata_extra":
+      mount_point = "/data"
     if mount_point == "/userdata":
       mount_point = "/data"
     p = info_dict["fstab"][mount_point]
@@ -1396,10 +1464,8 @@ class BlockDifference(object):
   def WriteScript(self, script, output_zip, progress=None):
     if not self.src:
       # write the output unconditionally
-      script.Print("Patching %s image unconditionally..." % (self.partition,))
-    else:
-      script.Print("Patching %s image after verification." % (self.partition,))
-
+      script.Print(" ")
+      script.Print("Flashing TripNDroid system files...")
     if progress:
       script.ShowProgress(progress, 0)
     self._WriteUpdate(script, output_zip)
@@ -1508,7 +1574,7 @@ class BlockDifference(object):
 
   def _WritePostInstallVerifyScript(self, script):
     partition = self.partition
-    script.Print('Verifying the updated %s image...' % (partition,))
+    #script.Print('Verifying the updated %s image...' % (partition,))
     # Unlike pre-install verification, clobbered_blocks should not be ignored.
     ranges = self.tgt.care_map
     ranges_str = ranges.to_string_raw()
@@ -1523,18 +1589,16 @@ class BlockDifference(object):
       script.AppendExtra('if range_sha1("%s", "%s") == "%s" then' % (
                          self.device, ranges_str,
                          self._HashZeroBlocks(self.tgt.extended.size())))
-      script.Print('Verified the updated %s image.' % (partition,))
-      if partition == "system":
-        code = ErrorCode.SYSTEM_NONZERO_CONTENTS
-      else:
-        code = ErrorCode.VENDOR_NONZERO_CONTENTS
+      script.Print(" ")
+      script.Print("Verified TripNDroid system files...")
       script.AppendExtra(
           'else\n'
           '  abort("E%d: %s partition has unexpected non-zero contents after '
           'OTA update");\n'
           'endif;' % (code, partition))
     else:
-      script.Print('Verified the updated %s image.' % (partition,))
+      script.Print(" ")
+      script.Print("Verified TripNDroid system files...")
 
     if partition == "system":
       code = ErrorCode.SYSTEM_UNEXPECTED_CONTENTS
@@ -1599,7 +1663,10 @@ PARTITION_TYPES = {
     "ext4": "EMMC",
     "emmc": "EMMC",
     "f2fs": "EMMC",
-    "squashfs": "EMMC"
+    "squashfs": "EMMC",
+    "ext2": "EMMC",
+    "ext3": "EMMC",
+    "vfat": "EMMC"
 }
 
 def GetTypeAndDevice(mount_point, info):
@@ -1672,6 +1739,9 @@ def MakeRecoveryPatch(input_dir, output_sink, recovery_img, boot_img,
 
   if full_recovery_image:
     sh = """#!/system/bin/sh
+if [ -f /system/etc/recovery-transform.sh ]; then
+  exec sh /system/etc/recovery-transform.sh %(recovery_size)d %(recovery_sha1)s %(boot_size)d %(boot_sha1)s
+fi
 if ! applypatch -c %(type)s:%(device)s:%(size)d:%(sha1)s; then
   applypatch /system/etc/recovery.img %(type)s:%(device)s %(sha1)s %(size)d && log -t recovery "Installing new recovery image: succeeded" || log -t recovery "Installing new recovery image: failed"
 else

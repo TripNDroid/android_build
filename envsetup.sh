@@ -4,6 +4,7 @@ Invoke ". build/envsetup.sh" from your shell to add the following functions to y
 - lunch:     lunch <product_name>-<build_variant>
 - tapas:     tapas [<App1> <App2> ...] [arm|x86|mips|armv5|arm64|x86_64|mips64] [eng|userdebug|user]
 - croot:     Changes directory to the top of the tree.
+- cout:      Changes directory to out.
 - m:         Makes from the top of the tree.
 - mm:        Builds all of the modules in the current directory, but not their dependencies.
 - mmm:       Builds all of the modules in the supplied directories, but not their dependencies.
@@ -20,6 +21,13 @@ Invoke ". build/envsetup.sh" from your shell to add the following functions to y
 - sepgrep:   Greps on all local sepolicy files.
 - sgrep:     Greps on all local source files.
 - godir:     Go to the directory containing a file.
+- mka:      Builds using SCHED_BATCH on all processors
+
+EOF
+
+    __print_tripndroid_functions_help
+
+cat <<EOF
 
 Environment options:
 - SANITIZE_HOST: Set to 'true' to use ASAN for all host modules. Note that
@@ -29,12 +37,9 @@ Environment options:
 Look at the source to view more functions. The complete list is:
 EOF
     T=$(gettop)
-    local A
-    A=""
     for i in `cat $T/build/envsetup.sh | sed -n "/^[[:blank:]]*function /s/function \([a-z_]*\).*/\1/p" | sort | uniq`; do
-      A="$A $i"
-    done
-    echo $A
+      echo "$i"
+    done | column
 }
 
 # Get all the build variables needed by this script in a single call to the build system.
@@ -45,7 +50,7 @@ function build_build_var_cache()
     cached_vars=`cat $T/build/envsetup.sh | tr '()' '  ' | awk '{for(i=1;i<=NF;i++) if($i~/get_build_var/) print $(i+1)}' | sort -u | tr '\n' ' '`
     cached_abs_vars=`cat $T/build/envsetup.sh | tr '()' '  ' | awk '{for(i=1;i<=NF;i++) if($i~/get_abs_build_var/) print $(i+1)}' | sort -u | tr '\n' ' '`
     # Call the build system to dump the "<val>=<value>" pairs as a shell script.
-    build_dicts_script=`\cd $T; CALLED_FROM_SETUP=true BUILD_SYSTEM=build/core \
+    build_dicts_script=`\cd $T; export CALLED_FROM_SETUP=true; export BUILD_SYSTEM=build/core; \
                         command make --no-print-directory -f build/core/config.mk \
                         dump-many-vars \
                         DUMP_MANY_VARS="$cached_vars" \
@@ -74,11 +79,11 @@ function build_build_var_cache()
 function destroy_build_var_cache()
 {
     unset BUILD_VAR_CACHE_READY
-    for v in $cached_vars; do
+    for v in $(echo $cached_vars | tr " " "\n"); do
       unset var_cache_$v
     done
     unset cached_vars
-    for v in $cached_abs_vars; do
+    for v in $(echo $cached_abs_vars | tr " " "\n"); do
       unset abs_var_cache_$v
     done
     unset cached_abs_vars
@@ -98,7 +103,7 @@ function get_abs_build_var()
         echo "Couldn't locate the top of the tree.  Try setting TOP." >&2
         return
     fi
-    (\cd $T; CALLED_FROM_SETUP=true BUILD_SYSTEM=build/core \
+    (\cd $T; export CALLED_FROM_SETUP=true; export BUILD_SYSTEM=build/core; \
       command make --no-print-directory -f build/core/config.mk dumpvar-abs-$1)
 }
 
@@ -116,7 +121,7 @@ function get_build_var()
         echo "Couldn't locate the top of the tree.  Try setting TOP." >&2
         return
     fi
-    (\cd $T; CALLED_FROM_SETUP=true BUILD_SYSTEM=build/core \
+    (\cd $T; export CALLED_FROM_SETUP=true; export BUILD_SYSTEM=build/core; \
       command make --no-print-directory -f build/core/config.mk dumpvar-$1)
 }
 
@@ -128,6 +133,14 @@ function check_product()
         echo "Couldn't locate the top of the tree.  Try setting TOP." >&2
         return
     fi
+
+    if (echo -n $1 | grep -q -e "^tripndroid_") ; then
+       TRIPNDROID_BUILD=$(echo -n $1 | sed -e 's/^tripndroid_//g')
+    else
+       TRIPNDROID_BUILD=
+    fi
+    export TRIPNDROID_BUILD
+
         TARGET_PRODUCT=$1 \
         TARGET_BUILD_VARIANT= \
         TARGET_BUILD_TYPE= \
@@ -260,6 +273,10 @@ function setpaths()
     unset ANDROID_HOST_OUT
     export ANDROID_HOST_OUT=$(get_abs_build_var HOST_OUT)
 
+    if [ -n "$ANDROID_CCACHE_DIR" ]; then
+        export CCACHE_DIR=$ANDROID_CCACHE_DIR
+    fi
+
     # needed for building linux on MacOS
     # TODO: fix the path
     #export HOST_EXTRACFLAGS="-I "$T/system/kernel_headers/host_include
@@ -282,7 +299,6 @@ function set_stuff_for_environment()
     setpaths
     set_sequence_number
 
-    export ANDROID_BUILD_TOP=$(gettop)
     # With this environment variable new GCC can apply colors to warnings/errors
     export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
     export ASAN_OPTIONS=detect_leaks=0
@@ -300,35 +316,42 @@ function settitle()
         local product=$TARGET_PRODUCT
         local variant=$TARGET_BUILD_VARIANT
         local apps=$TARGET_BUILD_APPS
-        if [ -z "$apps" ]; then
-            export PROMPT_COMMAND="echo -ne \"\033]0;[${arch}-${product}-${variant}] ${USER}@${HOSTNAME}: ${PWD}\007\""
-        else
-            export PROMPT_COMMAND="echo -ne \"\033]0;[$arch $apps $variant] ${USER}@${HOSTNAME}: ${PWD}\007\""
+        if [ -z "$PROMPT_COMMAND"  ]; then
+            # No prompts
+            PROMPT_COMMAND="echo -ne \"\033]0;${USER}@${HOSTNAME}: ${PWD}\007\""
+        elif [ -z "$(echo $PROMPT_COMMAND | grep '033]0;')" ]; then
+            # Prompts exist, but no hardstatus
+            PROMPT_COMMAND="echo -ne \"\033]0;${USER}@${HOSTNAME}: ${PWD}\007\";${PROMPT_COMMAND}"
         fi
+        if [ ! -z "$ANDROID_PROMPT_PREFIX" ]; then
+            PROMPT_COMMAND="$(echo $PROMPT_COMMAND | sed -e 's/$ANDROID_PROMPT_PREFIX //g')"
+        fi
+
+        if [ -z "$apps" ]; then
+            ANDROID_PROMPT_PREFIX="[${arch}-${product}-${variant}]"
+        else
+            ANDROID_PROMPT_PREFIX="[$arch $apps $variant]"
+        fi
+        export ANDROID_PROMPT_PREFIX
+
+        # Inject build data into hardstatus
+        export PROMPT_COMMAND="$(echo $PROMPT_COMMAND | sed -e 's/\\033]0;\(.*\)\\007/\\033]0;$ANDROID_PROMPT_PREFIX \1\\007/g')"
     fi
 }
 
-function addcompletions()
+function check_bash_version()
 {
-    local T dir f
-
     # Keep us from trying to run in something that isn't bash.
     if [ -z "${BASH_VERSION}" ]; then
-        return
+        return 1
     fi
 
     # Keep us from trying to run in bash that's too old.
-    if [ ${BASH_VERSINFO[0]} -lt 3 ]; then
-        return
+    if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
+        return 2
     fi
 
-    dir="sdk/bash_completion"
-    if [ -d ${dir} ]; then
-        for f in `/bin/ls ${dir}/[a-z]*.bash 2> /dev/null`; do
-            echo "including $f"
-            . $f
-        done
-    fi
+    return 0
 }
 
 function choosetype()
@@ -514,12 +537,6 @@ function add_lunch_combo()
 }
 
 # add the default one here
-add_lunch_combo aosp_arm-eng
-add_lunch_combo aosp_arm64-eng
-add_lunch_combo aosp_mips-eng
-add_lunch_combo aosp_mips64-eng
-add_lunch_combo aosp_x86-eng
-add_lunch_combo aosp_x86_64-eng
 
 function print_lunch_menu()
 {
@@ -527,18 +544,69 @@ function print_lunch_menu()
     echo
     echo "You're building on" $uname
     echo
-    echo "Lunch menu... pick a combo:"
+    if [ "z${TRIPNDROID_DEVICES_ONLY}" != "z" ]; then
+       echo "Breakfast menu... pick a combo:"
+    else
+       echo "Lunch menu... pick a combo:"
+    fi
 
     local i=1
     local choice
     for choice in ${LUNCH_MENU_CHOICES[@]}
     do
-        echo "     $i. $choice"
+        echo " $i. $choice "
         i=$(($i+1))
-    done
+    done | column
+
+    if [ "z${TRIPNDROID_DEVICES_ONLY}" != "z" ]; then
+       echo "... and don't forget the bacon!"
+    fi
 
     echo
 }
+
+function brunch()
+{
+    breakfast $*
+    if [ $? -eq 0 ]; then
+        time mka bacon
+    else
+        echo "Do you know what you're doing?"
+        return 1
+    fi
+    return $?
+}
+
+function breakfast()
+{
+    target=$1
+    DU_DEVICES_ONLY="true"
+    unset LUNCH_MENU_CHOICES
+    add_lunch_combo full-eng
+    for f in `/bin/ls vendor/tripndroid/vendorsetup.sh 2> /dev/null`
+        do
+            echo "including $f"
+            . $f
+        done
+    unset f
+
+    if [ $# -eq 0 ]; then
+        # No arguments, so let's have the full menu
+        lunch
+    else
+        echo "z$target" | grep -q "-"
+        if [ $? -eq 0 ]; then
+            # A buildtype was specified, assume a full device name
+            lunch $target
+        else
+            # This is probably just the tripndroid model name
+            lunch tripndroid_$target-userdebug
+        fi
+    fi
+    return $?
+}
+
+alias bib=breakfast
 
 function lunch()
 {
@@ -548,7 +616,10 @@ function lunch()
         answer=$1
     else
         print_lunch_menu
-        echo -n "Which would you like? [aosp_arm-eng] "
+        tput setaf 2;
+        tput bold;
+        echo -n "Go ahead and pick a number... "
+        tput sgr0;
         read answer
     fi
 
@@ -570,12 +641,37 @@ function lunch()
 
     if [ -z "$selection" ]
     then
-        echo
-        echo "Invalid lunch combo: $answer"
+        echo ""
+        echo "Come on man, pay attention to what you're doing"
+        echo ""
         return 1
     fi
 
     export TARGET_BUILD_APPS=
+
+    local product=$(echo -n $selection | sed -e "s/-.*$//")
+    check_product $product
+    if [ $? -ne 0 ]
+    then
+        # if we can't find the product, try to grab it from our github
+        T=$(gettop)
+        pushd $T > /dev/null
+        build/tools/roomservice.py $product
+        popd > /dev/null
+        check_product $product
+    else
+        T=$(gettop)
+        pushd $T > /dev/null
+        build/tools/roomservice.py $product true
+        popd > /dev/null
+    fi
+    if [ $? -ne 0 ]
+    then
+        echo
+        echo "** Don't have a product spec for: '$product'"
+        echo "** Do you have the right repo manifest?"
+        product=
+    fi
 
     local variant=$(echo -n $selection | sed -e "s/^[^\-]*-//")
     check_variant $variant
@@ -611,6 +707,8 @@ function lunch()
 
     echo
 
+    fixup_common_out_dir
+
     set_stuff_for_environment
     printconfig
     destroy_build_var_cache
@@ -627,7 +725,7 @@ function _lunch()
     COMPREPLY=( $(compgen -W "${LUNCH_MENU_CHOICES[*]}" -- ${cur}) )
     return 0
 }
-complete -F _lunch lunch
+complete -F _lunch lunch 2>/dev/null
 
 # Configures the build to build unbundled apps.
 # Run tapas with one or more app names (from LOCAL_PACKAGE_NAME)
@@ -765,7 +863,6 @@ function mm()
         local M=$(findmakefile)
         local MODULES=
         local GET_INSTALL_PATH=
-        local ARGS=
         # Remove the path to top as the makefilepath needs to be relative
         local M=`echo $M|sed 's:'$T'/::'`
         if [ ! "$T" ]; then
@@ -782,12 +879,12 @@ function mm()
             done
             if [ -n "$GET_INSTALL_PATH" ]; then
               MODULES=
-              ARGS=GET-INSTALL-PATH
+              # set all args to 'GET-INSTALL-PATH'
+              set -- GET-INSTALL-PATH
             else
               MODULES=all_modules
-              ARGS=$@
             fi
-            ONE_SHOT_MAKEFILE=$M $DRV make -C $T -f build/core/main.mk $MODULES $ARGS
+            ONE_SHOT_MAKEFILE=$M $DRV make -C $T -f build/core/main.mk $MODULES "$@"
         fi
     fi
 }
@@ -802,8 +899,15 @@ function mmm()
         local ARGS=
         local DIR TO_CHOP
         local GET_INSTALL_PATH=
-        local DASH_ARGS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^-.*$/')
-        local DIRS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^[^-].*$/')
+
+        if [ "$(__detect_shell)" = "zsh" ]; then
+            set -lA DASH_ARGS $(echo "$@" | awk -v RS=" " -v ORS=" " '/^-.*$/')
+            set -lA DIRS $(echo "$@" | awk -v RS=" " -v ORS=" " '/^[^-].*$/')
+        else
+            local DASH_ARGS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^-.*$/')
+            local DIRS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^[^-].*$/')
+        fi
+
         for DIR in $DIRS ; do
             MODULES=`echo $DIR | sed -n -e 's/.*:\(.*$\)/\1/p' | sed 's/,/ /'`
             if [ "$MODULES" = "" ]; then
@@ -869,8 +973,13 @@ function mmma()
   local T=$(gettop)
   local DRV=$(getdriver $T)
   if [ "$T" ]; then
-    local DASH_ARGS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^-.*$/')
-    local DIRS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^[^-].*$/')
+    if [ "$(__detect_shell)" = "zsh" ]; then
+        set -lA DASH_ARGS $(echo "$@" | awk -v RS=" " -v ORS=" " '/^-.*$/')
+        set -lA DIRS $(echo "$@" | awk -v RS=" " -v ORS=" " '/^[^-].*$/')
+    else
+        local DASH_ARGS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^-.*$/')
+        local DIRS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^[^-].*$/')
+    fi
     local MY_PWD=`PWD= /bin/pwd`
     if [ "$MY_PWD" = "$T" ]; then
       MY_PWD=
@@ -912,6 +1021,15 @@ function croot()
         \cd $(gettop)
     else
         echo "Couldn't locate the top of the tree.  Try setting TOP."
+    fi
+}
+
+function cout()
+{
+    if [  "$OUT" ]; then
+        cd $OUT
+    else
+        echo "Couldn't locate out directory.  Try setting OUT."
     fi
 }
 
@@ -1484,6 +1602,36 @@ function godir () {
     \cd $T/$pathname
 }
 
+# Make using all available CPUs
+function mka() {
+    case `uname -s` in
+        Darwin)
+            make -j `sysctl hw.ncpu|cut -d" " -f2` "$@"
+            ;;
+        *)
+            schedtool -B -n 1 -e ionice -n 1 make -j `cat /proc/cpuinfo | grep "^processor" | wc -l` "$@"
+            ;;
+    esac
+}
+
+function fixup_common_out_dir() {
+    common_out_dir=$(get_build_var OUT_DIR)/target/common
+    target_device=$(get_build_var TARGET_DEVICE)
+    if [ ! -z $ANDROID_FIXUP_COMMON_OUT ]; then
+        if [ -d ${common_out_dir} ] && [ ! -L ${common_out_dir} ]; then
+            mv ${common_out_dir} ${common_out_dir}-${target_device}
+            ln -s ${common_out_dir}-${target_device} ${common_out_dir}
+        else
+            [ -L ${common_out_dir} ] && rm ${common_out_dir}
+            mkdir -p ${common_out_dir}-${target_device}
+            ln -s ${common_out_dir}-${target_device} ${common_out_dir}
+        fi
+    else
+        [ -L ${common_out_dir} ] && rm ${common_out_dir}
+        mkdir -p ${common_out_dir}
+    fi
+}
+
 # Force JAVA_HOME to point to java 1.7/1.8 if it isn't already set.
 function set_java_home() {
     # Clear the existing JAVA_HOME value if we set it ourselves, so that
@@ -1542,10 +1690,10 @@ function get_make_command()
   echo command make
 }
 
-function make()
+function mk_timer()
 {
     local start_time=$(date +"%s")
-    $(get_make_command) "$@"
+    $@
     local ret=$?
     local end_time=$(date +"%s")
     local tdiff=$(($end_time-$start_time))
@@ -1609,14 +1757,30 @@ function provision()
     "$ANDROID_PRODUCT_OUT/provision-device" "$@"
 }
 
-if [ "x$SHELL" != "x/bin/bash" ]; then
+function make()
+{
+    mk_timer $(get_make_command) "$@"
+}
+
+function __detect_shell() {
     case `ps -o command -p $$` in
         *bash*)
+            echo bash
+            ;;
+        *zsh*)
+            echo zsh
             ;;
         *)
-            echo "WARNING: Only bash is supported, use of other shell would lead to erroneous results"
+            echo unknown
+            return 1
             ;;
     esac
+    return
+}
+
+
+if ! __detect_shell > /dev/null; then
+    echo "WARNING: Only bash and zsh are supported, use of other shell may lead to erroneous results"
 fi
 
 # Execute the contents of any vendorsetup.sh files we can find.
@@ -1629,4 +1793,18 @@ do
 done
 unset f
 
-addcompletions
+# Add completions
+check_bash_version && {
+    dirs="sdk/bash_completion vendor/tripndroid/bash_completion"
+    for dir in $dirs; do
+    if [ -d ${dir} ]; then
+        for f in `/bin/ls ${dir}/[a-z]*.bash 2> /dev/null`; do
+            echo "including $f"
+            . $f
+        done
+    fi
+    done
+}
+
+export ANDROID_BUILD_TOP=$(gettop)
+

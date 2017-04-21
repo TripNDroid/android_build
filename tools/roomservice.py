@@ -1,5 +1,4 @@
-#
-# Copyright (C) 2006 The Android Open Source Project
+#!/usr/bin/env python
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +11,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
 
-# Setup FDO related flags.
+import os
+import os.path
+import sys
+import urllib2
+import json
+import re
+from xml.etree import ElementTree
+from urllib2 import urlopen, Request
 
-$(combo_2nd_arch_prefix)TARGET_FDO_CFLAGS:=
+product = sys.argv[1];
+
+if len(sys.argv) > 2:
+    depsonly = sys.argv[2]
+else:
+    depsonly = None
+
+try:
+    device = product[product.index("_") + 1:]
+except:
+    device = product
+
+if depsonly:
+    print "Trying dependencies-only mode on a non-existing device tree?"
+
+    sys.exit()

@@ -32,8 +32,12 @@ if sys.hexversion < 0x02070000:
   print >> sys.stderr, "Python 2.7 or newer is required."
   sys.exit(1)
 
+import errno
 import os
+import re
 import shutil
+import subprocess
+import tempfile
 import zipfile
 
 import common
@@ -79,6 +83,7 @@ def main(argv):
     if os.path.exists(images_path):
       # If this is a new target-files, it already contains the images,
       # and all we have to do is copy them to the output zip.
+      # Skip oem.img files since they are not needed in fastboot images.
       images = os.listdir(images_path)
       if images:
         for image in images:
@@ -124,8 +129,16 @@ def main(argv):
           pass   # no vendor partition for this device
         banner("AddUserdata")
         add_img_to_target_files.AddUserdata(output_zip, prefix="")
+        banner("AddUserdataExtra")
+        add_img_to_target_files.AddUserdataExtra(output_zip, prefix="")
         banner("AddCache")
         add_img_to_target_files.AddCache(output_zip, prefix="")
+        try:
+          input_zip.getinfo("OEM/")
+          banner("AddOem")
+          add_img_to_target_files.AddOem(output_zip, prefix="")
+        except KeyError:
+          pass   # no oem partition for this device
 
   finally:
     print "cleaning up..."
