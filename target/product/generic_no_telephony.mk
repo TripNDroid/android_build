@@ -24,7 +24,7 @@ PRODUCT_PACKAGES := \
     Gallery2 \
     MusicFX \
     OneTimeInitializer \
-    Provision \
+    SetupWizard \
     SystemUI \
     EasterEgg \
     WallpaperCropper
