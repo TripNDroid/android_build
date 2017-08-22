@@ -129,6 +129,14 @@ function check_product()
         echo "Couldn't locate the top of the tree.  Try setting TOP." >&2
         return
     fi
+
+    if (echo -n $1 | grep -q -e "^tripndroid_") ; then
+       TRIPNDROID_BUILD=$(echo -n $1 | sed -e 's/^tripndroid_//g')
+    else
+       TRIPNDROID_BUILD=
+    fi
+    export TRIPNDROID_BUILD
+
         TARGET_PRODUCT=$1 \
         TARGET_BUILD_VARIANT= \
         TARGET_BUILD_TYPE= \
