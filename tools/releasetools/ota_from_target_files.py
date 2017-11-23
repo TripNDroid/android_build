@@ -455,7 +455,20 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
     script.Comment("Stage 3/3")
 
   # Dump fingerprints
-  script.Print("Target: %s" % target_fp)
+  #script.Print("Target: %s" % target_fp)
+
+  script.Print("")
+  script.Print("     [ Welcome to the TripNDroid experience ]     ");
+  script.Print("")
+  script.Print(" _____      _           __  ___           _     _ ");
+  script.Print("/__   \_ __(_)_ __   /\ \ \/   \_ __ ___ (_) __| |");
+  script.Print("  / /\/ '__| | '_ \ /  \/ / /\ / '__/ _ \| |/ _` |");
+  script.Print(" / /  | |  | | |_) / /\  / /_//| | | (_) | | (_| |");
+  script.Print(" \/   |_|  |_| .__/\_\ \/___,' |_|  \___/|_|\__,_|");
+  script.Print("             |_|                                  ");
+  script.Print("")
+  script.Print("                ][ Android Oreo ][                ");
+  script.Print("")
 
   device_specific.FullOTA_InstallBegin()
 
@@ -498,6 +511,8 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
   common.ZipWriteStr(output_zip, "boot.img", boot_img.data)
 
+  script.Print(" ")
+  script.Print("Flashing boot image..")
   script.ShowProgress(0.05, 5)
   script.WriteRawImage("/boot", "boot.img")
 
