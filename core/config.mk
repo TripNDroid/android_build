@@ -183,6 +183,8 @@ include $(BUILD_SYSTEM)/envsetup.mk
 # See envsetup.mk for a description of SCAN_EXCLUDE_DIRS
 FIND_LEAVES_EXCLUDES := $(addprefix --prune=, $(SCAN_EXCLUDE_DIRS) .repo .git)
 
+-include vendor/tripndroid/config/BoardConfigTD.mk
+
 # The build system exposes several variables for where to find the kernel
 # headers:
 #   TARGET_DEVICE_KERNEL_HEADERS is automatically created for the current
@@ -958,4 +960,16 @@ include $(BUILD_SYSTEM)/ninja_config.mk
 include $(BUILD_SYSTEM)/soong_config.mk
 endif
 
+ifneq ($(TRIPNDROID_BUILD),)
+## We need to be sure our selinux policies are included
+## last, to avoid accidental resetting by device configs
+include $(TOPDIR)vendor/tripndroid/sepolicy/sepolicy.mk
+
+ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
+include $(TOPDIR)vendor/tripndroid/build/core/qcom_target.mk
+endif
+
+endif
+
 include $(BUILD_SYSTEM)/dumpvar.mk
+
