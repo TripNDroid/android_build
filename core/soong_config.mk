@@ -15,11 +15,10 @@ endif
 
 # Create soong.variables with copies of makefile settings.  Runs every build,
 # but only updates soong.variables if it changes
-SOONG_VARIABLES_TMP := $(SOONG_VARIABLES).$$$$
-$(SOONG_VARIABLES): FORCE
-	$(hide) mkdir -p $(dir $@)
+SOONG_VARIABLES_TMP := $(shell mktemp -u)
+include vendor/tripndroid/build/soong/soong_config.mk
+$(SOONG_VARIABLES): FORCE tripndroid_soong
 	$(hide) (\
-	echo '{'; \
 	echo '    "Make_suffix": "-$(TARGET_PRODUCT)",'; \
 	echo ''; \
 	echo '    "Platform_sdk_version": $(PLATFORM_SDK_VERSION),'; \
@@ -73,7 +72,7 @@ $(SOONG_VARIABLES): FORCE
 	echo ''; \
 	echo '    "ForcedShimLibs": "$(LINKER_FORCED_SHIM_LIBS)",'; \
 	echo '    "BtConfigIncludeDir": "$(BOARD_BLUETOOTH_BDROID_BUILDCFG_INCLUDE_DIR)"'; \
-	echo '}') > $(SOONG_VARIABLES_TMP); \
+	echo '}') >> $(SOONG_VARIABLES_TMP); \
 	if ! cmp -s $(SOONG_VARIABLES_TMP) $(SOONG_VARIABLES); then \
 	  mv $(SOONG_VARIABLES_TMP) $(SOONG_VARIABLES); \
 	else \
